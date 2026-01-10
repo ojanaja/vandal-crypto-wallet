@@ -26,5 +26,11 @@
     "16": "vite.svg",
     "48": "vite.svg",
     "128": "vite.svg"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["inpage.js", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

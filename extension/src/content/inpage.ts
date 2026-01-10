@@ -27,9 +27,8 @@ class VandalProvider {
         return Promise.reject("Not implemented");
     }
 
-    signMessage(message: Uint8Array) {
-        // TODO: Implement
-        return Promise.reject("Not implemented");
+    signMessage(message: Uint8Array, display: string = 'utf8') {
+        return this._request('SIGN_MESSAGE', { message, display });
     }
 
     disconnect() {
@@ -92,4 +91,4 @@ class VandalProvider {
 
 // Inject
 (window as any).solana = new VandalProvider();
-// console.log("VANDAL provider injected");
+console.log("VANDAL provider injected");

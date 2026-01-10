@@ -7,6 +7,7 @@ export type ExtensionMessage =
     | { type: 'SEND_TRANSACTION'; payload: { to: string; amount: number } }
     | { type: 'CONNECT_DAPP'; payload: { origin: string } }
     | { type: 'SIGN_TRANSACTION_DAPP'; payload: { transaction: string; origin: string } }
+    | { type: 'SIGN_MESSAGE'; payload: { message: any; display: string } }
     | { type: 'GET_TRANSACTIONS' };
 
 export type ExtensionResponse =

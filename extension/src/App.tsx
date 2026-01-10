@@ -117,7 +117,8 @@ function App() {
             >
               Create New Wallet
             </button>
-            <button className="bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+            <button className="bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              onClick={() => alert("Import wallet feature coming soon!")}>
               I already have a wallet
             </button>
           </div>
@@ -163,6 +164,28 @@ function App() {
         )}
 
         {/* ... */}
+
+        {step === 'create' && (
+          <div className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Your Secret Recovery Phrase</h2>
+            <p className="text-sm text-gray-400">Write down these 12 words and keep them safe. You will need them to recover your wallet.</p>
+
+            <div className="bg-gray-800 p-4 rounded-lg grid grid-cols-3 gap-2">
+              {mnemonic?.split(' ').map((word, i) => (
+                <div key={i} className="bg-gray-700 p-2 rounded text-center text-sm">
+                  <span className="text-gray-500 mr-2">{i + 1}.</span>{word}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setStep('password')}
+              className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold py-3 px-4 rounded-lg mt-4"
+            >
+              I have saved it
+            </button>
+          </div>
+        )}
 
         {step === 'password' && (
           <div className="flex flex-col gap-4">

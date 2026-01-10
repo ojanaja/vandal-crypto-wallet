@@ -1,6 +1,7 @@
 import { encryptVault, decryptVault, deriveKeypairFromMnemonic } from '../utils/crypto';
 import { ExtensionMessage } from '../utils/messages';
 import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import nacl from 'tweetnacl';
 
 // IN-MEMORY KEYRING (The Vault)
 // This variable is NOT persisted. It is lost when the browser closes or the service worker goes inactive.
@@ -11,8 +12,26 @@ interface Keyring {
 let keyring: Keyring | null = null;
 let vaultState: { hasWallet: boolean; isLocked: boolean } = { hasWallet: false, isLocked: true };
 
+// Helper to restore keyring from session
+async function ensureKeyring() {
+    if (keyring) return keyring;
+    try {
+        const result = await chrome.storage.session.get(['mnemonic']);
+        if (result.mnemonic) {
+            keyring = { mnemonic: result.mnemonic };
+            vaultState.isLocked = false;
+        }
+    } catch (e) {
+        console.error("Session storage access failed", e);
+    }
+    return keyring;
+}
+
 // Initialize connection to Devnet
 const connection = new Connection("https://api.devnet.solana.com", 'confirmed');
+
+// Try to restore session on startup
+ensureKeyring();
 
 // Initialize state from storage
 chrome.storage.local.get(['encryptedVault'], (result) => {
@@ -46,32 +65,51 @@ chrome.runtime.onMessage.addListener(
                         break;
 
                     case 'GET_BALANCE':
+                        await ensureKeyring();
                         if (!keyring) throw new Error("Wallet is locked");
                         const { balance, pubkey } = await handleGetBalance();
                         sendResponse({ type: 'BALANCE', payload: { balance, pubkey: pubkey.toBase58() } });
                         break;
 
                     case 'SEND_TRANSACTION':
+                        await ensureKeyring();
                         if (!keyring) throw new Error("Wallet is locked");
                         const signature = await handleSendTransaction(message.payload.to, message.payload.amount);
                         sendResponse({ type: 'SUCCESS', payload: { signature } });
                         break;
 
                     case 'GET_TRANSACTIONS':
+                        await ensureKeyring();
                         if (!keyring) throw new Error("Wallet is locked");
                         const transactions = await handleGetTransactions();
                         sendResponse({ type: 'TRANSACTIONS', payload: { signatures: transactions } });
                         break;
 
+                    case 'SIGN_MESSAGE':
+                        await ensureKeyring();
+                        if (!keyring) throw new Error("Wallet is locked");
+                        const signedMessage = await handleSignMessage(message.payload.message);
+                        sendResponse({ type: 'SIGN_MESSAGE', payload: { signature: signedMessage } });
+                        break;
+
                     case 'CONNECT_DAPP':
-                        if (!vaultState.hasWallet) throw new Error("No wallet found");
-                        if (vaultState.isLocked) throw new Error("Wallet is locked");
+                        await ensureKeyring();
+                        // If locked or no wallet, open popup and wait for user to unlock/create
+                        if (!vaultState.hasWallet || vaultState.isLocked) {
+                            await openPopup();
+                            const unlocked = await waitForUnlock();
+                            if (!unlocked) throw new Error("Wallet is locked or setup not completed");
+                        }
+
+                        // Ensure we have the keyring now
+                        if (!keyring) throw new Error("Wallet state error");
 
                         const kp = await deriveKeypairFromMnemonic(keyring!.mnemonic);
                         sendResponse({ type: 'CONNECTED', payload: { publicKey: kp.publicKey.toBase58() } });
                         break;
 
                     case 'SIGN_TRANSACTION_DAPP':
+                        await ensureKeyring();
                         if (!keyring) throw new Error("Wallet is locked");
                         // For MVP: we just error if it's not implemented, or we can mock it.
                         // Since we don't have deserialization logic readily available in this file for base64 txs yet,
@@ -128,6 +166,17 @@ async function handleGetTransactions() {
     return signatures;
 }
 
+async function handleSignMessage(messageConfig: any) {
+    if (!keyring) throw new Error("Locked");
+    const kp = await deriveKeypairFromMnemonic(keyring.mnemonic);
+
+    // Message comes as a number object or array from the content script usually
+    // We need to convert it to Uint8Array
+    const messageBytes = new Uint8Array(Object.values(messageConfig));
+    const signature = nacl.sign.detached(messageBytes, kp.secretKey);
+    return signature;
+}
+
 async function handleCreateWallet(mnemonic: string, password: string) {
     // 1. Encrypt mnemonic
     const encrypted = await encryptVault(mnemonic, password);
@@ -135,8 +184,9 @@ async function handleCreateWallet(mnemonic: string, password: string) {
     // 2. Save credential to local storage
     await chrome.storage.local.set({ encryptedVault: encrypted });
 
-    // 3. Set in-memory keyring
+    // 3. Set in-memory keyring AND session
     keyring = { mnemonic };
+    await chrome.storage.session.set({ mnemonic });
     vaultState = { hasWallet: true, isLocked: false };
 }
 
@@ -151,10 +201,53 @@ async function handleUnlockWallet(password: string) {
 
     // If successful:
     keyring = { mnemonic };
+    await chrome.storage.session.set({ mnemonic });
     vaultState = { hasWallet: true, isLocked: false };
 }
 
 function handleLockWallet() {
     keyring = null;
+    chrome.storage.session.remove('mnemonic');
     vaultState.isLocked = true;
+}
+
+// -----------------------------------------------------------------------------
+// Popup & Wait Logic
+// -----------------------------------------------------------------------------
+
+async function openPopup() {
+    // Check if popup is already open
+    // @ts-ignore
+    const windows = await chrome.windows.getAll({ populate: true });
+    // @ts-ignore
+    const existingPopup = windows.find((w: any) => w.type === 'popup' && w.tabs?.some((t: any) => t.url?.includes(chrome.runtime.getId())));
+
+    if (existingPopup && existingPopup.id) {
+        // @ts-ignore
+        await chrome.windows.update(existingPopup.id, { focused: true });
+        return;
+    }
+
+    // @ts-ignore
+    await chrome.windows.create({
+        url: 'index.html',
+        type: 'popup',
+        width: 375,
+        height: 600
+    });
+}
+
+async function waitForUnlock(): Promise<boolean> {
+    // Poll for up to 2 minutes (120 * 1s)
+    for (let i = 0; i < 120; i++) {
+        // Check if unlocked in memory (updated by UNLOCK_WALLET handler)
+        if (!vaultState.isLocked && keyring) return true;
+
+        // Also check session storage just in case another window unlocked it
+        await ensureKeyring();
+        if (!vaultState.isLocked && keyring) return true;
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return false;
 }
