@@ -22,6 +22,7 @@ export default defineConfig({
         popup: resolve(__dirname, 'index.html'),
         serviceWorker: resolve(__dirname, 'src/background/index.ts'),
         contentScript: resolve(__dirname, 'src/content/index.ts'),
+        inpage: resolve(__dirname, 'src/content/inpage.ts'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
@@ -30,6 +31,9 @@ export default defineConfig({
           }
           if (chunkInfo.name === 'contentScript') {
             return 'content-script.js';
+          }
+          if (chunkInfo.name === 'inpage') {
+            return 'inpage.js';
           }
           return 'assets/[name]-[hash].js';
         },

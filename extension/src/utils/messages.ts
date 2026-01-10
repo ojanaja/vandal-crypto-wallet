@@ -4,13 +4,19 @@ export type ExtensionMessage =
     | { type: 'LOCK_WALLET' }
     | { type: 'GET_STATUS' }
     | { type: 'GET_BALANCE' }
-    | { type: 'SEND_TRANSACTION'; payload: { to: string; amount: number } };
+    | { type: 'SEND_TRANSACTION'; payload: { to: string; amount: number } }
+    | { type: 'CONNECT_DAPP'; payload: { origin: string } }
+    | { type: 'SIGN_TRANSACTION_DAPP'; payload: { transaction: string; origin: string } }
+    | { type: 'GET_TRANSACTIONS' };
 
 export type ExtensionResponse =
     | { type: 'SUCCESS'; payload?: any }
     | { type: 'ERROR'; error: string }
     | { type: 'STATUS'; payload: { isLocked: boolean; hasWallet: boolean } }
-    | { type: 'BALANCE'; payload: { balance: number; pubkey: string } };
+    | { type: 'BALANCE'; payload: { balance: number; pubkey: string } }
+    | { type: 'CONNECTED'; payload: { publicKey: string } }
+    | { type: 'SIGNED'; payload: { signature: string } }
+    | { type: 'TRANSACTIONS'; payload: { signatures: any[] } };
 
 export const sendMessageToBackground = (
     message: ExtensionMessage

@@ -56,6 +56,28 @@ chrome.runtime.onMessage.addListener(
                         const signature = await handleSendTransaction(message.payload.to, message.payload.amount);
                         sendResponse({ type: 'SUCCESS', payload: { signature } });
                         break;
+
+                    case 'GET_TRANSACTIONS':
+                        if (!keyring) throw new Error("Wallet is locked");
+                        const transactions = await handleGetTransactions();
+                        sendResponse({ type: 'TRANSACTIONS', payload: { signatures: transactions } });
+                        break;
+
+                    case 'CONNECT_DAPP':
+                        if (!vaultState.hasWallet) throw new Error("No wallet found");
+                        if (vaultState.isLocked) throw new Error("Wallet is locked");
+
+                        const kp = await deriveKeypairFromMnemonic(keyring!.mnemonic);
+                        sendResponse({ type: 'CONNECTED', payload: { publicKey: kp.publicKey.toBase58() } });
+                        break;
+
+                    case 'SIGN_TRANSACTION_DAPP':
+                        if (!keyring) throw new Error("Wallet is locked");
+                        // For MVP: we just error if it's not implemented, or we can mock it.
+                        // Since we don't have deserialization logic readily available in this file for base64 txs yet,
+                        // we can leave this as a placeholder or throw a clear error.
+                        throw new Error("Transaction signing via dApp not fully implemented in MVP");
+                        break;
                 }
             } catch (e: any) {
                 console.error("Background Error:", e);
@@ -88,10 +110,22 @@ async function handleSendTransaction(toAddress: string, amountSOL: number) {
         })
     );
 
+    // Recent blockhash is required for signing
+    const { blockhash } = await connection.getLatestBlockhash();
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = kp.publicKey;
+
     // Send and confirm
     const signature = await connection.sendTransaction(transaction, [kp]);
     // Optionally wait for confirmation here or let UI poll
     return signature;
+}
+
+async function handleGetTransactions() {
+    if (!keyring) throw new Error("Locked");
+    const kp = await deriveKeypairFromMnemonic(keyring.mnemonic);
+    const signatures = await connection.getSignaturesForAddress(kp.publicKey, { limit: 5 });
+    return signatures;
 }
 
 async function handleCreateWallet(mnemonic: string, password: string) {
