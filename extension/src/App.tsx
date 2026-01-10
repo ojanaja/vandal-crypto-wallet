@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { generateMnemonic } from './utils/crypto';
 import { sendMessageToBackground } from './utils/messages';
+import Dashboard from './components/Dashboard';
+import SendForm from './components/SendForm';
 
-type AppStep = 'loading' | 'welcome' | 'create' | 'password' | 'unlock' | 'ready';
+type AppStep = 'loading' | 'welcome' | 'create' | 'password' | 'unlock' | 'ready' | 'send';
 
 function App() {
   const [mnemonic, setMnemonic] = useState<string | null>(null);
@@ -100,7 +102,7 @@ function App() {
           <h1 className="text-2xl font-bold text-emerald-400">VANDAL</h1>
           <p className="text-gray-400 text-sm">Devnet Wallet</p>
         </div>
-        {step === 'ready' && (
+        {(step === 'ready' || step === 'send') && (
           <button onClick={handleLock} className="text-xs bg-gray-800 p-2 rounded hover:bg-gray-700">Lock</button>
         )}
       </header>
@@ -196,15 +198,17 @@ function App() {
         )}
 
         {step === 'ready' && (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="w-16 h-16 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center text-3xl">
-              ✓
-            </div>
-            <h2 className="text-xl font-bold">Wallet Unlocked</h2>
-            <p className="text-center text-gray-400 text-sm">
-              You are using VANDAL on Solana Devnet.
-            </p>
-          </div>
+          <Dashboard
+            onLock={handleLock}
+            onSend={() => setStep('send')}
+          />
+        )}
+
+        {step === 'send' && (
+          <SendForm
+            onBack={() => setStep('ready')}
+            onSuccess={() => setStep('ready')}
+          />
         )}
       </main>
     </div>

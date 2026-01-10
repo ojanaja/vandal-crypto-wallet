@@ -1,5 +1,6 @@
-import { encryptVault, decryptVault } from '../utils/crypto';
-import { ExtensionMessage, ExtensionResponse } from '../utils/messages';
+import { encryptVault, decryptVault, deriveKeypairFromMnemonic } from '../utils/crypto';
+import { ExtensionMessage } from '../utils/messages';
+import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 // IN-MEMORY KEYRING (The Vault)
 // This variable is NOT persisted. It is lost when the browser closes or the service worker goes inactive.
@@ -9,6 +10,9 @@ interface Keyring {
 
 let keyring: Keyring | null = null;
 let vaultState: { hasWallet: boolean; isLocked: boolean } = { hasWallet: false, isLocked: true };
+
+// Initialize connection to Devnet
+const connection = new Connection("https://api.devnet.solana.com", 'confirmed');
 
 // Initialize state from storage
 chrome.storage.local.get(['encryptedVault'], (result) => {
@@ -40,8 +44,21 @@ chrome.runtime.onMessage.addListener(
                     case 'GET_STATUS':
                         sendResponse({ type: 'STATUS', payload: vaultState });
                         break;
+
+                    case 'GET_BALANCE':
+                        if (!keyring) throw new Error("Wallet is locked");
+                        const { balance, pubkey } = await handleGetBalance();
+                        sendResponse({ type: 'BALANCE', payload: { balance, pubkey: pubkey.toBase58() } });
+                        break;
+
+                    case 'SEND_TRANSACTION':
+                        if (!keyring) throw new Error("Wallet is locked");
+                        const signature = await handleSendTransaction(message.payload.to, message.payload.amount);
+                        sendResponse({ type: 'SUCCESS', payload: { signature } });
+                        break;
                 }
             } catch (e: any) {
+                console.error("Background Error:", e);
                 sendResponse({ type: 'ERROR', error: e.message });
             }
         })();
@@ -49,6 +66,33 @@ chrome.runtime.onMessage.addListener(
         return true; // Keep channel open for async response
     }
 );
+
+async function handleGetBalance() {
+    if (!keyring) throw new Error("Locked");
+    const kp = await deriveKeypairFromMnemonic(keyring.mnemonic);
+    const balance = await connection.getBalance(kp.publicKey);
+    return { balance: balance / LAMPORTS_PER_SOL, pubkey: kp.publicKey };
+}
+
+async function handleSendTransaction(toAddress: string, amountSOL: number) {
+    if (!keyring) throw new Error("Locked");
+    const kp = await deriveKeypairFromMnemonic(keyring.mnemonic);
+    const toPubkey = new PublicKey(toAddress);
+
+    // Create Transaction
+    const transaction = new Transaction().add(
+        SystemProgram.transfer({
+            fromPubkey: kp.publicKey,
+            toPubkey: toPubkey,
+            lamports: Math.floor(amountSOL * LAMPORTS_PER_SOL),
+        })
+    );
+
+    // Send and confirm
+    const signature = await connection.sendTransaction(transaction, [kp]);
+    // Optionally wait for confirmation here or let UI poll
+    return signature;
+}
 
 async function handleCreateWallet(mnemonic: string, password: string) {
     // 1. Encrypt mnemonic
