@@ -37,13 +37,13 @@ export const encryptVault = async (data: string, password: string): Promise<Encr
     const enc = new TextEncoder();
     const passwordKey = await importPassword(password);
 
-    const salt = window.crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
     const key = await deriveKey(passwordKey, salt);
 
-    const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+    const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
     const encodedData = enc.encode(data);
 
-    const ciphertextBuffer = await window.crypto.subtle.encrypt(
+    const ciphertextBuffer = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv },
         key,
         encodedData
@@ -65,7 +65,7 @@ export const decryptVault = async (encrypted: EncryptedData, password: string): 
     const key = await deriveKey(passwordKey, salt);
 
     try {
-        const decryptedBuffer = await window.crypto.subtle.decrypt(
+        const decryptedBuffer = await crypto.subtle.decrypt(
             { name: "AES-GCM", iv },
             key,
             ciphertext
@@ -80,7 +80,7 @@ export const decryptVault = async (encrypted: EncryptedData, password: string): 
 // Helpers
 const importPassword = (password: string): Promise<CryptoKey> => {
     const enc = new TextEncoder();
-    return window.crypto.subtle.importKey(
+    return crypto.subtle.importKey(
         "raw",
         enc.encode(password),
         { name: "PBKDF2" },
@@ -90,7 +90,7 @@ const importPassword = (password: string): Promise<CryptoKey> => {
 };
 
 const deriveKey = (passwordKey: CryptoKey, salt: Uint8Array): Promise<CryptoKey> => {
-    return window.crypto.subtle.deriveKey(
+    return crypto.subtle.deriveKey(
         {
             name: "PBKDF2",
             salt: salt,

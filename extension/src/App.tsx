@@ -1,11 +1,38 @@
-import { useState } from 'react';
-import { generateMnemonic, deriveKeypairFromMnemonic, encryptVault } from './utils/crypto';
+import { useState, useEffect } from 'react';
+import { generateMnemonic } from './utils/crypto';
+import { sendMessageToBackground } from './utils/messages';
+
+type AppStep = 'loading' | 'welcome' | 'create' | 'password' | 'unlock' | 'ready';
 
 function App() {
   const [mnemonic, setMnemonic] = useState<string | null>(null);
-  const [step, setStep] = useState<'welcome' | 'create' | 'password' | 'ready'>('welcome');
+  const [step, setStep] = useState<AppStep>('loading');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const checkStatus = async () => {
+    try {
+      const response = await sendMessageToBackground({ type: 'GET_STATUS' });
+      if (response.type === 'STATUS') {
+        const { hasWallet, isLocked } = response.payload;
+        if (!hasWallet) {
+          setStep('welcome');
+        } else if (isLocked) {
+          setStep('unlock');
+        } else {
+          setStep('ready');
+        }
+      }
+    } catch (e) {
+      console.error("Failed to check status", e);
+      setStep('welcome'); // Fallback
+    }
+  };
 
   const handleCreate = () => {
     const newMnemonic = generateMnemonic();
@@ -16,27 +43,66 @@ function App() {
   const handleSaveWallet = async () => {
     if (!mnemonic || !password) return;
     setLoading(true);
-    // Simulate confirming mnemonic and saving
-    // In real app, we verify mnemonic
     try {
-      const encrypted = await encryptVault(mnemonic, password);
-      console.log('Encrypted Vault:', encrypted);
-      // TODO: Save to storage
-      // const kp = await deriveKeypairFromMnemonic(mnemonic);
-      // console.log('Public Key:', kp.publicKey.toBase58());
-      setStep('ready');
-    } catch (e) {
-      console.error(e);
+      const res = await sendMessageToBackground({
+        type: 'CREATE_WALLET',
+        payload: { mnemonic, password }
+      });
+
+      if (res.type === 'SUCCESS') {
+        setStep('ready');
+      } else {
+        setError(res.error || 'Failed to create wallet');
+      }
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleUnlock = async () => {
+    if (!password) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await sendMessageToBackground({
+        type: 'UNLOCK_WALLET',
+        payload: { password }
+      });
+
+      if (res.type === 'SUCCESS') {
+        setStep('ready');
+        setPassword('');
+      } else {
+        setError('Incorrect password');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLock = async () => {
+    await sendMessageToBackground({ type: 'LOCK_WALLET' });
+    setStep('unlock');
+  };
+
+  if (step === 'loading') {
+    return <div className="bg-gray-900 text-white flex items-center justify-center h-screen">Loading...</div>;
+  }
+
   return (
     <div className="w-[360px] h-[600px] bg-gray-900 text-white flex flex-col p-6">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-emerald-400">VANDAL</h1>
-        <p className="text-gray-400 text-sm">Devnet Wallet</p>
+      <header className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-emerald-400">VANDAL</h1>
+          <p className="text-gray-400 text-sm">Devnet Wallet</p>
+        </div>
+        {step === 'ready' && (
+          <button onClick={handleLock} className="text-xs bg-gray-800 p-2 rounded hover:bg-gray-700">Lock</button>
+        )}
       </header>
 
       <main className="flex-1 flex flex-col">
@@ -50,6 +116,27 @@ function App() {
             </button>
             <button className="bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
               I already have a wallet
+            </button>
+          </div>
+        )}
+
+        {step === 'unlock' && (
+          <div className="flex flex-col gap-4 mt-10">
+            <h2 className="text-xl font-bold">Welcome Back</h2>
+            <input
+              type="password"
+              placeholder="Enter Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="bg-gray-800 border-gray-700 rounded p-3 text-white focus:border-emerald-500 focus:outline-none"
+            />
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+            <button
+              onClick={handleUnlock}
+              disabled={loading}
+              className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 text-black font-bold py-3 px-4 rounded-lg transition-colors"
+            >
+              {loading ? 'Unlocking...' : 'Unlock'}
             </button>
           </div>
         )}
@@ -96,6 +183,8 @@ function App() {
               className="bg-gray-800 border-gray-700 rounded p-3 text-white focus:border-emerald-500 focus:outline-none"
             />
 
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+
             <button
               onClick={handleSaveWallet}
               disabled={!password || loading}
@@ -111,9 +200,9 @@ function App() {
             <div className="w-16 h-16 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center text-3xl">
               ✓
             </div>
-            <h2 className="text-xl font-bold">Wallet Created!</h2>
+            <h2 className="text-xl font-bold">Wallet Unlocked</h2>
             <p className="text-center text-gray-400 text-sm">
-              You are now ready to use VANDAL on Solana Devnet.
+              You are using VANDAL on Solana Devnet.
             </p>
           </div>
         )}
