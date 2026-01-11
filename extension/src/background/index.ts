@@ -55,8 +55,14 @@ chrome.runtime.onMessage.addListener(
                         sendResponse({ type: 'SUCCESS' });
                         break;
 
+
                     case 'LOCK_WALLET':
                         handleLockWallet();
+                        sendResponse({ type: 'SUCCESS' });
+                        break;
+
+                    case 'RESET_WALLET':
+                        await handleResetWallet();
                         sendResponse({ type: 'SUCCESS' });
                         break;
 
@@ -209,6 +215,13 @@ function handleLockWallet() {
     keyring = null;
     chrome.storage.session.remove('mnemonic');
     vaultState.isLocked = true;
+}
+
+async function handleResetWallet() {
+    keyring = null;
+    vaultState = { hasWallet: false, isLocked: true };
+    await chrome.storage.session.remove('mnemonic');
+    await chrome.storage.local.remove('encryptedVault');
 }
 
 // -----------------------------------------------------------------------------

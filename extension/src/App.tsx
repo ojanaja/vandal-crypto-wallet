@@ -4,10 +4,11 @@ import { sendMessageToBackground } from './utils/messages';
 import Dashboard from './components/Dashboard';
 import SendForm from './components/SendForm';
 
-type AppStep = 'loading' | 'welcome' | 'create' | 'password' | 'unlock' | 'ready' | 'send';
+type AppStep = 'loading' | 'welcome' | 'create' | 'import' | 'password' | 'unlock' | 'ready' | 'send';
 
 function App() {
   const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [importWords, setImportWords] = useState<string[]>(Array(12).fill(''));
   const [step, setStep] = useState<AppStep>('loading');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +93,15 @@ function App() {
     setStep('unlock');
   };
 
+  const handleReset = async () => {
+    if (confirm("Are you sure? This will wipe your wallet from this extension. You will need your seed phrase to restore it.")) {
+      await sendMessageToBackground({ type: 'RESET_WALLET' });
+      setMnemonic(null);
+      setPassword('');
+      setStep('welcome');
+    }
+  };
+
   if (step === 'loading') {
     return <div className="bg-gray-900 text-white flex items-center justify-center h-screen">Loading...</div>;
   }
@@ -104,7 +114,10 @@ function App() {
           <p className="text-gray-400 text-sm">Devnet Wallet</p>
         </div>
         {(step === 'ready' || step === 'send') && (
-          <button onClick={handleLock} className="text-xs bg-gray-800 p-2 rounded hover:bg-gray-700">Lock</button>
+          <div className="flex gap-2">
+            <button onClick={handleReset} className="text-xs bg-red-900/50 text-red-200 p-2 rounded hover:bg-red-900">Reset</button>
+            <button onClick={handleLock} className="text-xs bg-gray-800 p-2 rounded hover:bg-gray-700">Lock</button>
+          </div>
         )}
       </header>
 
@@ -118,7 +131,7 @@ function App() {
               Create New Wallet
             </button>
             <button className="bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-              onClick={() => alert("Import wallet feature coming soon!")}>
+              onClick={() => { setImportWords(Array(12).fill('')); setStep('import'); }}>
               I already have a wallet
             </button>
           </div>
@@ -183,6 +196,70 @@ function App() {
               className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold py-3 px-4 rounded-lg mt-4"
             >
               I have saved it
+            </button>
+          </div>
+        )}
+
+        {step === 'import' && (
+          <div className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Import Wallet</h2>
+            <p className="text-sm text-gray-400">Enter your 12-word Secret Recovery Phrase.</p>
+
+            <div className="bg-gray-800 p-4 rounded-lg grid grid-cols-3 gap-2">
+              {importWords.map((word, i) => (
+                <div key={i} className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs select-none">{i + 1}.</span>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-700 p-2 pl-6 rounded text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    value={word}
+                    onChange={(e) => {
+                      const newWords = [...importWords];
+                      newWords[i] = e.target.value;
+                      setImportWords(newWords);
+                    }}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      const pasted = e.clipboardData.getData('text').trim();
+                      if (pasted) {
+                        const words = pasted.split(/\s+/).slice(0, 12);
+                        // If pasted string has multiple words, fill from current index
+                        if (words.length > 1) {
+                          const newWords = [...importWords];
+                          words.forEach((w, idx) => {
+                            if (i + idx < 12) newWords[i + idx] = w;
+                          });
+                          setImportWords(newWords);
+                        } else {
+                          // Single word paste
+                          const newWords = [...importWords];
+                          newWords[i] = pasted;
+                          setImportWords(newWords);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                const phrase = importWords.join(' ');
+                setMnemonic(phrase);
+                setStep('password');
+              }}
+              disabled={importWords.some(w => !w.trim())}
+              className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold py-3 px-4 rounded-lg mt-4"
+            >
+              Continue
+            </button>
+
+            <button
+              onClick={() => setStep('welcome')}
+              className="text-gray-400 hover:text-white text-sm mt-2 self-center"
+            >
+              Cancel
             </button>
           </div>
         )}
